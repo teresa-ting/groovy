@@ -1,0 +1,305 @@
+package com.lanmao.testsuite.Account
+
+import com.lanmao.testsuite.Transfer.TransferParamUnit
+
+
+class T0AccountTest extends TransferParamUnit{
+    static def user
+    static amount1 = 100
+    static amount2 = 0
+    static def i
+
+
+    def '个人用户user绑卡注册'() {
+
+        /**
+         * 前置:
+         * 1. 所有参数都传入（身份证唯一校验参数除外）
+         * 2. checkType传入LIMIT
+         */
+
+        when:
+        def requestNo1 = 'requestNo'+uuid()+ '1'
+        user = uuid()
+        def req = [requestNo: requestNo1, platformUserNo: user, realName: realName, userRole: 'INVESTOR',
+                   idCardNo : idCardNo, mobile: mobile, bankcardNo: bankcardNo, idCardType: 'PRC_ID', checkType: 'LIMIT',
+                   amount : '10000', authList : 'TENDER,REPAYMENT,RECHARGE,WITHDRAW']
+        def instance = gateway('PERSONAL_REGISTER_EXPAND', req, "WEB")
+        sleep(2000)
+
+        // 检查
+        then:
+        $("#password").size() == 1
+        /**
+         * 操作:
+         * 点击发送验证码按钮，输入验证码3
+         * 设置交易密码，点击确认
+         * 期望结果:
+         * 1. accessType为四要素鉴权
+         * 2. code为0
+         * 3.platformUserNo一致
+         */
+        when:
+        log "输入密码并点击按钮"
+        $("#password").val(password)
+        $("#confirmPassword").val(password)
+        $('#sendSmsVerify').click()
+        sleep(1000)
+        $(".submitBtn-2").click()
+        sleep(1000)
+        $("#smsCode").val(smsCode)
+        $('#isAgreeReg').click()
+        sleep(1000)
+        $('#nextButton').click()
+        def resp = response()
+        sleep(2000)
+
+        then:
+        eq resp.code, 0
+        eq resp.accessType, "FULL_CHECKED"
+        eq resp.requestNo, requestNo1
+
+
+    }
+
+    def '无佣金充值传入callback——PC端'(){
+        when:
+        def requestNo = uuid()
+        def updateAcountSettlement
+        updateAcountSettlement = db.update('update LM_ACCNT.T_ACCOUNT_SETTLEMENT set CURRENT_SETTLEMENT_DATE=CURRENT_SETTLEMENT_DATE-3 DAYS,MODIFY_TIME=MODIFY_TIME-3 DAYS where MERCHANT_NO=?','3000000939')
+        if(updateAcountSettlement>0){
+            println('updateAcountSettlement success')
+        }
+        def req=[
+                requestNo:requestNo,
+                platformUserNo:user,
+                amount:amount1,
+                expectPayCompany:expectPayCompany,
+                rechargeWay:rechargeWay,
+                bankcode:bankcode,
+                payType:payType,
+                expired:'20201210120000',
+                callbackMode:callbackMode
+        ]
+
+        //查询充值前的账户余额
+        def userbefore=direct('QUERY_USER_INFORMATION',[platformUserNo:user])
+        gateway('RECHARGE',req)
+        sleep(2000)
+
+        then:
+        $('#password').size()==1
+
+        when:
+        $('#password').val(password)
+        $('#isAgreeReg').click()
+        $('#nextButton').click()
+        sleep(2000)
+        def resp=response()
+        println(resp)
+        if('PENDDING'== resp.status){
+            for (int i = 0; i < 100; i++) {
+            def result = direct("QUERY_TRANSACTION", [
+                    requestNo      : requestNo,
+                    transactionType: 'RECHARGE',
+            ])
+            if (result.records.status[0].equals("SUCCESS")) {
+                println("充值成功")
+                break;
+            }
+            sleep(1000)
+        }
+        }
+        //查询充值后的账户余额
+        def userafter=direct('QUERY_USER_INFORMATION',[platformUserNo:user])
+        sleep(2000)
+
+        then:
+        eq resp.code,0
+        eq userafter.balance,userbefore.balance+amount1
+    }
+
+//    def '修改为昨日充值账务'(){
+//        when:
+//        def updateAccount
+//        def updateAccountFloat
+//
+//        def updateAccountSnapshot
+//        updateAccount = db.update('update LM_ACCNT.T_ACCOUNT set FLOAT_MODIFY_TIME=FLOAT_MODIFY_TIME-1 DAYS,CREATE_TIME=CREATE_TIME-1 DAYS,CURRENT_SETTLEMENT_DATE=CURRENT_SETTLEMENT_DATE-1 DAYS,BALANCE_MODIFY_TIME=BALANCE_MODIFY_TIME-1 DAYS where MERCHANT_SUBJECT_NO=?',user)
+//        updateAccountFloat = db.update('update LM_ACCNT.T_ACCOUNT_FLOAT set SETTLEMENT_POINT=SETTLEMENT_POINT-1 DAYS,MODIFY_TIME=MODIFY_TIME-1 DAYS where ACCOUNT_ID=(select ID from LM_ACCNT.T_ACCOUNT where MERCHANT_SUBJECT_NO=?)',user)
+//        sleep(2000)
+//
+//        updateAccountSnapshot = db.update('update LM_ACCNT.T_ACCOUNT_SNAPSHOT set SNAPSHOT_DATE=SNAPSHOT_DATE-1 DAYS where ACCOUNT_ID=(select ID from LM_ACCNT.T_ACCOUNT where MERCHANT_SUBJECT_NO=?)',user)
+//        sleep(2000)
+//        if(updateAccount>0 && updateAccountFloat>0 && updateAccountSnapshot>0){
+//            println('调整账务成功')
+//        }
+//        def userInfo1 = queryUserInfo(user)
+//        then:
+//        eq userInfo1.balance, amount1
+//        eq userInfo1.availableAmount, amount1
+//        eq userInfo1.floatBalance, amount1
+//    }
+//
+//    def '二次充值'(){
+//        when:
+//        def requestNo = uuid()
+//        def req=[
+//                requestNo:requestNo,
+//                platformUserNo:user,
+//                amount:amount2,
+//                expectPayCompany:expectPayCompany,
+//                rechargeWay:rechargeWay,
+//                bankcode:bankcode,
+//                payType:payType,
+//                expired:'20201210120000',
+//                callbackMode:callbackMode
+//        ]
+//
+//        //查询充值前的账户余额
+//        def userbefore=direct('QUERY_USER_INFORMATION',[platformUserNo:user])
+//        gateway('RECHARGE',req)
+//        sleep(2000)
+//
+//        then:
+//        $('#password').size()==1
+//
+//        when:
+//        $('#password').val(password)
+//        $('#isAgreeReg').click()
+//        $('#nextButton').click()
+//        sleep(2000)
+//        def resp=response()
+//        println(resp)
+//        if('PENDDING'== resp.status){
+//            for (int i = 0; i < 100; i++) {
+//                def result = direct("QUERY_TRANSACTION", [
+//                        requestNo      : requestNo,
+//                        transactionType: 'RECHARGE',
+//                ])
+//                if (result.records.status[0].equals("SUCCESS")) {
+//                    println("充值成功")
+//                    break;
+//                }
+//                sleep(1000)
+//            }
+//        }
+//        //查询充值后的账户余额
+//        def userafter=direct('QUERY_USER_INFORMATION',[platformUserNo:user])
+//
+//
+//        then:
+//        eq resp.code,0
+//        eq userafter.balance,userbefore.balance+amount2
+//
+//        when:
+//        def userInfo2 = queryUserInfo(user)
+//        then:
+//        eq userInfo2.balance, amount1+amount2
+//        eq userInfo2.availableAmount, amount1+amount2
+//        eq userInfo2.floatBalance, amount1+amount2
+//        when:
+//        def updateAcountSettlement1
+//        updateAcountSettlement1 = db.update('update LM_ACCNT.T_ACCOUNT_SETTLEMENT set CURRENT_SETTLEMENT_DATE=CURRENT DATE ,MODIFY_TIME=CURRENT TIMESTAMP where MERCHANT_NO=?','3000000939')
+//        if(updateAcountSettlement1>0){
+//            sleep(2000)
+//            println('updateAcountSettlement1 success')
+//        }
+//        def userInfo3 = queryUserInfo(user)
+//        then:
+//        eq userInfo3.balance, amount1+amount2
+//        eq userInfo3.floatBalance, amount2
+//    }
+
+    def '多次充值'(){
+        when:
+        for(i=1; i<=7 ; i++){
+            when:
+            def updateAccount
+            def updateAccountFloat
+
+            def updateAccountSnapshot
+            updateAccount = db.update('update LM_ACCNT.T_ACCOUNT set FLOAT_MODIFY_TIME=FLOAT_MODIFY_TIME-1 DAYS,CREATE_TIME=CREATE_TIME-1 DAYS,CURRENT_SETTLEMENT_DATE=CURRENT_SETTLEMENT_DATE-1 DAYS,BALANCE_MODIFY_TIME=BALANCE_MODIFY_TIME-1 DAYS where MERCHANT_SUBJECT_NO=?',user)
+            updateAccountFloat = db.update('update LM_ACCNT.T_ACCOUNT_FLOAT set SETTLEMENT_POINT=SETTLEMENT_POINT-1 DAYS,MODIFY_TIME=MODIFY_TIME-1 DAYS where ACCOUNT_ID=(select ID from LM_ACCNT.T_ACCOUNT where MERCHANT_SUBJECT_NO=?)',user)
+            sleep(2000)
+
+            updateAccountSnapshot = db.update('update LM_ACCNT.T_ACCOUNT_SNAPSHOT set SNAPSHOT_DATE=SNAPSHOT_DATE-1 DAYS where ACCOUNT_ID=(select ID from LM_ACCNT.T_ACCOUNT where MERCHANT_SUBJECT_NO=?)',user)
+            sleep(2000)
+            if(updateAccount>0 && updateAccountFloat>0 && updateAccountSnapshot>0){
+                println('调整账务成功')
+            }
+            def userInfo1 = queryUserInfo(user)
+            sleep(3000)
+            then:
+            eq userInfo1.balance, amount1+amount2*i
+            eq userInfo1.floatBalance, amount1+amount2*i
+            when:
+            def requestNo = uuid()
+            amount2 = 50
+            def req=[
+                    requestNo:requestNo,
+                    platformUserNo:user,
+                    amount:amount2,
+                    expectPayCompany:expectPayCompany,
+                    rechargeWay:rechargeWay,
+                    bankcode:bankcode,
+                    payType:payType,
+                    expired:'20201210120000',
+                    callbackMode:callbackMode
+            ]
+
+            //查询充值前的账户余额
+            def userbefore=direct('QUERY_USER_INFORMATION',[platformUserNo:user])
+            gateway('RECHARGE',req)
+            sleep(2000)
+
+            then:
+            $('#password').size()==1
+
+            when:
+            $('#password').val(password)
+            $('#isAgreeReg').click()
+            $('#nextButton').click()
+            sleep(2000)
+            def resp=response()
+            println(resp)
+            if('PENDDING'== resp.status){
+                for (int j = 0; j < 100; j++) {
+                    def result = direct("QUERY_TRANSACTION", [
+                            requestNo      : requestNo,
+                            transactionType: 'RECHARGE',
+                    ])
+                    if (result.records.status[0].equals("SUCCESS")) {
+                        println("充值成功")
+                        break;
+                    }
+                    sleep(1000)
+                }
+            }
+            //查询充值后的账户余额
+            def userafter=direct('QUERY_USER_INFORMATION',[platformUserNo:user])
+            def userInfo2 = queryUserInfo(user)
+            then:
+            eq resp.code,0
+            eq userafter.balance,userbefore.balance+amount2
+
+            eq userInfo2.balance, amount1+amount2*i
+            eq userInfo2.floatBalance, amount1+amount2*i
+            when:
+            def updateAcountSettlement1
+            updateAcountSettlement1 = db.update('update LM_ACCNT.T_ACCOUNT_SETTLEMENT set CURRENT_SETTLEMENT_DATE=CURRENT DATE ,MODIFY_TIME=CURRENT TIMESTAMP where MERCHANT_NO=?','3000000939')
+            if(updateAcountSettlement1>0){
+                sleep(2000)
+                println('updateAcountSettlement1 success')
+            }
+            def userInfo3 = queryUserInfo(user)
+            then:
+            eq userInfo3.balance, amount1+amount2*i
+            eq userInfo3.floatBalance, amount2
+
+        }
+        then:
+        println("执行了"+i+"次充值")
+    }
+
+}
